@@ -1,3 +1,31 @@
+# oh-my-claudecode v4.6.7: Bundled Path Resolution & Daemon Startup Fixes
+
+## Release Notes
+
+Patch release focused on bundled CJS runtime stability and daemon startup correctness.
+
+### Bug Fixes
+
+- **Bundled package-dir resolution**: Hardened `getPackageDir()` logic in agent prompt loaders to correctly resolve package root in bundled CJS runtime while preserving source/dist behavior.
+  - Updated `src/agents/utils.ts`
+  - Updated `src/agents/prompt-helpers.ts`
+  - Fixes #1322 and #1324
+
+- **Wait daemon bootstrap module path**: Fixed daemon child-process import path resolution so bundled `bridge/cli.cjs` launches the correct dist module instead of recursively importing CLI entry.
+  - Updated `src/features/rate-limit-wait/daemon.ts`
+  - Added shared resolver `src/utils/daemon-module-path.ts`
+  - Added regression tests in `src/__tests__/daemon-module-path.test.ts`
+  - Fixes #1323
+
+- **Reply listener daemon bootstrap module path**: Applied the same bundled module path fix to reply listener daemon startup.
+  - Updated `src/notifications/reply-listener.ts`
+
+- **Regression coverage**:
+  - Added `src/__tests__/package-dir-resolution-regression.test.ts`
+  - Regenerated bridge/dist artifacts
+
+---
+
 # oh-my-claudecode v4.6.5: Remove jsonc-parser Dependency
 
 ## Release Notes
