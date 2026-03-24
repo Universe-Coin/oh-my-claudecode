@@ -13,6 +13,7 @@ import { join } from "path";
 import { getOmcRoot } from '../../lib/worktree-paths.js';
 import { recordAgentStart, recordAgentStop } from './session-replay.js';
 import { recordMissionAgentStart, recordMissionAgentStop } from '../../hud/mission-board.js';
+import { isProcessAlive } from '../../platform/index.js';
 export const COST_LIMIT_USD = 1.0;
 export const DEADLOCK_CHECK_THRESHOLD = 3;
 // ============================================================================
@@ -30,19 +31,6 @@ const FLUSH_RETRY_BASE_MS = 50;
 const pendingWrites = new Map();
 // Guard against duplicate concurrent flushes per directory
 const flushInProgress = new Set();
-/**
- * Check if a process is still alive
- * Signal 0 doesn't kill the process, just checks if it exists
- */
-function isProcessAlive(pid) {
-    try {
-        process.kill(pid, 0);
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
 /**
  * Synchronous sleep using Atomics.wait
  * Avoids CPU-spinning busy-wait loops

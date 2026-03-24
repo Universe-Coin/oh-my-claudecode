@@ -10,6 +10,7 @@ import { killWorkerPanes, killTeamSession } from '../team/tmux-session.js';
 import { validateTeamName } from '../team/team-name.js';
 import { monitorTeam, resumeTeam, shutdownTeam } from '../team/runtime.js';
 import { readTeamConfig } from '../team/monitor.js';
+import { isProcessAlive } from '../platform/index.js';
 const JOB_ID_PATTERN = /^omc-[a-z0-9]{1,12}$/;
 const VALID_CLI_AGENT_TYPES = new Set(['claude', 'codex', 'gemini']);
 const SUBCOMMANDS = new Set(['start', 'status', 'wait', 'cleanup', 'resume', 'shutdown', 'api', 'help', '--help', '-h']);
@@ -118,15 +119,6 @@ function writeJobToDisk(jobId, job, jobsDir) {
     ensureJobsDir(jobsDir);
     writeFileSync(jobPath(jobsDir, jobId), JSON.stringify(job), 'utf-8');
 }
-function isPidAlive(pid) {
-    try {
-        process.kill(pid, 0);
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
 function parseJobResult(raw) {
     if (!raw)
         return undefined;
@@ -160,7 +152,7 @@ function convergeWithResultArtifact(jobId, job, jobsDir) {
     catch {
         // no artifact yet
     }
-    if (job.status === 'running' && job.pid != null && !isPidAlive(job.pid)) {
+    if (job.status === 'running' && job.pid != null && !isProcessAlive(job.pid)) {
         return {
             ...job,
             status: 'failed',
@@ -361,7 +353,9 @@ export async function teamStatusByTeamName(teamName, cwd = process.cwd()) {
             running: true,
             sessionName: config?.tmux_session,
             leaderPaneId: config?.leader_pane_id,
-            workerPaneIds: (config?.workers ?? []).map((worker) => worker.pane_id).filter((paneId) => typeof paneId === 'string'),
+            workerPaneIds: Array.from(new Set((config?.workers ?? [])
+                .map((worker) => worker.pane_id)
+                .filter((paneId) => typeof paneId === 'string' && paneId.trim().length > 0))),
             snapshot,
         };
     }
