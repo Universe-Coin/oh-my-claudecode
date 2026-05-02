@@ -144,6 +144,7 @@ var tmux_session_exports = {};
 __export(tmux_session_exports, {
   applyMainVerticalLayout: () => applyMainVerticalLayout,
   buildWorkerLaunchSpec: () => buildWorkerLaunchSpec,
+  buildWorkerProcessLaunchSpec: () => buildWorkerProcessLaunchSpec,
   buildWorkerStartCommand: () => buildWorkerStartCommand,
   createSession: () => createSession,
   createTeamSession: () => createTeamSession,
@@ -163,15 +164,119 @@ __export(tmux_session_exports, {
   resolveShellFromCandidates: () => resolveShellFromCandidates,
   resolveSplitPaneWorkerPaneIds: () => resolveSplitPaneWorkerPaneIds,
   resolveSupportedShellAffinity: () => resolveSupportedShellAffinity,
+  resolveTeamWorkerCli: () => resolveTeamWorkerCli,
+  resolveTeamWorkerCliPlan: () => resolveTeamWorkerCliPlan,
   sanitizeName: () => sanitizeName,
   sendToWorker: () => sendToWorker,
   sessionName: () => sessionName,
   shouldAttemptAdaptiveRetry: () => shouldAttemptAdaptiveRetry,
   spawnBridgeInSession: () => spawnBridgeInSession,
   spawnWorkerInPane: () => spawnWorkerInPane,
+  translateWorkerLaunchArgsForCli: () => translateWorkerLaunchArgsForCli,
   validateTmux: () => validateTmux,
   waitForPaneReady: () => waitForPaneReady
 });
+function normalizeTeamWorkerCliMode(value, envName = OMC_TEAM_WORKER_CLI_ENV) {
+  const raw = typeof value === "string" && value.trim() !== "" ? value.trim().toLowerCase() : "auto";
+  if (raw === "auto" || raw === "codex" || raw === "claude" || raw === "gemini") return raw;
+  throw new Error(`Invalid ${envName} value "${value}". Expected: auto|codex|claude|gemini.`);
+}
+function extractModelOverride(args) {
+  let model = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === MODEL_FLAG2) {
+      const value = args[i + 1];
+      if (typeof value === "string" && value.trim() !== "" && !value.startsWith("-")) {
+        model = value.trim();
+        i += 1;
+      }
+      continue;
+    }
+    if (arg?.startsWith(`${MODEL_FLAG2}=`)) {
+      const inline = arg.slice(`${MODEL_FLAG2}=`.length).trim();
+      if (inline) model = inline;
+    }
+  }
+  return model;
+}
+function resolveTeamWorkerCliFromLaunchArgs(launchArgs = []) {
+  const model = extractModelOverride(launchArgs);
+  if (model && /claude/i.test(model)) return "claude";
+  if (model && /gemini/i.test(model)) return "gemini";
+  return "codex";
+}
+function resolveTeamWorkerCli(launchArgs = [], env = process.env) {
+  const explicit = env[OMC_TEAM_WORKER_CLI_ENV] ?? env[OMX_TEAM_WORKER_CLI_ENV];
+  const mode = normalizeTeamWorkerCliMode(explicit);
+  return mode === "auto" ? resolveTeamWorkerCliFromLaunchArgs(launchArgs) : mode;
+}
+function resolveTeamWorkerCliPlan(workerCount, launchArgs = [], env = process.env) {
+  if (!Number.isInteger(workerCount) || workerCount < 1) {
+    throw new Error(`workerCount must be >= 1 (got ${workerCount})`);
+  }
+  const mapEnvName = typeof env[OMC_TEAM_WORKER_CLI_MAP_ENV] === "string" ? OMC_TEAM_WORKER_CLI_MAP_ENV : OMX_TEAM_WORKER_CLI_MAP_ENV;
+  const rawMap = String(env[mapEnvName] ?? "").trim();
+  const fallback = () => resolveTeamWorkerCli(launchArgs, env);
+  const fallbackAutoFromArgs = () => resolveTeamWorkerCliFromLaunchArgs(launchArgs);
+  if (rawMap === "") {
+    const cli = fallback();
+    return Array.from({ length: workerCount }, () => cli);
+  }
+  const entries = rawMap.split(",").map((part) => part.trim());
+  if (entries.length === 0 || entries.every((part) => part.length === 0)) {
+    throw new Error(`Invalid ${mapEnvName} value "${env[mapEnvName]}". Expected comma-separated values: auto|codex|claude|gemini.`);
+  }
+  if (entries.some((part) => part.length === 0)) {
+    throw new Error(`Invalid ${mapEnvName} value "${env[mapEnvName]}". Empty entries are not allowed.`);
+  }
+  if (entries.length !== 1 && entries.length !== workerCount) {
+    throw new Error(`Invalid ${mapEnvName} length ${entries.length}; expected 1 or ${workerCount} comma-separated values.`);
+  }
+  const expanded = entries.length === 1 ? Array.from({ length: workerCount }, () => entries[0]) : entries;
+  return expanded.map((entry) => {
+    const mode = normalizeTeamWorkerCliMode(entry, mapEnvName);
+    return mode === "auto" ? fallbackAutoFromArgs() : mode;
+  });
+}
+function translateWorkerLaunchArgsForCli(workerCli, args, initialPrompt) {
+  if (workerCli === "codex") return [...args];
+  if (workerCli === "gemini") {
+    const translatedArgs = [GEMINI_APPROVAL_MODE_FLAG, GEMINI_APPROVAL_MODE_YOLO];
+    const trimmedPrompt = initialPrompt?.trim();
+    if (trimmedPrompt) translatedArgs.push(GEMINI_PROMPT_INTERACTIVE_FLAG, trimmedPrompt);
+    const model = extractModelOverride(args);
+    if (model && /gemini/i.test(model)) translatedArgs.push(MODEL_FLAG2, model);
+    return translatedArgs;
+  }
+  void args;
+  return [CLAUDE_SKIP_PERMISSIONS_FLAG];
+}
+function resolveWorkerCliPath(workerCli, env) {
+  const explicit = workerCli === "codex" ? env[OMC_LEADER_CLI_PATH_ENV] ?? env[OMX_LEADER_CLI_PATH_ENV] : void 0;
+  return explicit?.trim() || workerCli;
+}
+function buildWorkerProcessLaunchSpec(teamName, workerIndex, launchArgs = [], cwd = process.cwd(), extraEnv = {}, workerCliOverride, initialPrompt) {
+  const effectiveEnv = { ...process.env, ...extraEnv };
+  const workerCli = workerCliOverride ?? resolveTeamWorkerCli(launchArgs, effectiveEnv);
+  const args = translateWorkerLaunchArgsForCli(workerCli, launchArgs, initialPrompt);
+  const internalWorkerIdentity = `${teamName}/worker-${workerIndex}`;
+  const nodePath = effectiveEnv[OMC_LEADER_NODE_PATH_ENV]?.trim() || effectiveEnv[OMX_LEADER_NODE_PATH_ENV]?.trim() || process.execPath;
+  const command = resolveWorkerCliPath(workerCli, effectiveEnv);
+  const envOut = {
+    OMC_TEAM_WORKER: internalWorkerIdentity,
+    OMX_TEAM_WORKER: internalWorkerIdentity,
+    OMC_LEADER_NODE_PATH: nodePath,
+    OMX_LEADER_NODE_PATH: nodePath,
+    OMC_LEADER_CLI_PATH: command,
+    OMX_LEADER_CLI_PATH: command,
+    OMC_TMUX_HUD_OWNER: "1",
+    OMX_TMUX_HUD_OWNER: "1",
+    ...extraEnv
+  };
+  void cwd;
+  return { workerCli, command, args, env: envOut };
+}
 function detectTeamMultiplexerContext(env = process.env) {
   if (env.TMUX) return "tmux";
   if (env.CMUX_SURFACE_ID) return "cmux";
@@ -873,7 +978,7 @@ async function killTeamSession(sessionName2, workerPaneIds, leaderPaneId, option
   } catch {
   }
 }
-var import_fs5, import_path8, import_promises, sleep, TMUX_SESSION_PREFIX, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
+var import_fs5, import_path8, import_promises, sleep, TMUX_SESSION_PREFIX, MODEL_FLAG2, CLAUDE_SKIP_PERMISSIONS_FLAG, GEMINI_APPROVAL_MODE_FLAG, GEMINI_APPROVAL_MODE_YOLO, GEMINI_PROMPT_INTERACTIVE_FLAG, OMC_TEAM_WORKER_CLI_ENV, OMX_TEAM_WORKER_CLI_ENV, OMC_TEAM_WORKER_CLI_MAP_ENV, OMX_TEAM_WORKER_CLI_MAP_ENV, OMC_LEADER_NODE_PATH_ENV, OMC_LEADER_CLI_PATH_ENV, OMX_LEADER_NODE_PATH_ENV, OMX_LEADER_CLI_PATH_ENV, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
 var init_tmux_session = __esm({
   "src/team/tmux-session.ts"() {
     "use strict";
@@ -884,6 +989,19 @@ var init_tmux_session = __esm({
     init_tmux_utils();
     sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     TMUX_SESSION_PREFIX = "omc-team";
+    MODEL_FLAG2 = "--model";
+    CLAUDE_SKIP_PERMISSIONS_FLAG = "--dangerously-skip-permissions";
+    GEMINI_APPROVAL_MODE_FLAG = "--approval-mode";
+    GEMINI_APPROVAL_MODE_YOLO = "yolo";
+    GEMINI_PROMPT_INTERACTIVE_FLAG = "-i";
+    OMC_TEAM_WORKER_CLI_ENV = "OMC_TEAM_WORKER_CLI";
+    OMX_TEAM_WORKER_CLI_ENV = "OMX_TEAM_WORKER_CLI";
+    OMC_TEAM_WORKER_CLI_MAP_ENV = "OMC_TEAM_WORKER_CLI_MAP";
+    OMX_TEAM_WORKER_CLI_MAP_ENV = "OMX_TEAM_WORKER_CLI_MAP";
+    OMC_LEADER_NODE_PATH_ENV = "OMC_LEADER_NODE_PATH";
+    OMC_LEADER_CLI_PATH_ENV = "OMC_LEADER_CLI_PATH";
+    OMX_LEADER_NODE_PATH_ENV = "OMX_LEADER_NODE_PATH";
+    OMX_LEADER_CLI_PATH_ENV = "OMX_LEADER_CLI_PATH";
     SUPPORTED_POSIX_SHELLS = /* @__PURE__ */ new Set(["sh", "bash", "zsh", "fish", "ksh"]);
     ZSH_CANDIDATES = ["/bin/zsh", "/usr/bin/zsh", "/usr/local/bin/zsh", "/opt/homebrew/bin/zsh"];
     BASH_CANDIDATES = ["/bin/bash", "/usr/bin/bash"];
