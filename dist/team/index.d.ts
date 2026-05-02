@@ -47,6 +47,8 @@ export { parseTeamDagHandoff, readTeamDagHandoffForLatestPlan, } from './dag-sch
 export type { TeamDagHandoff, TeamDagNode, TeamDagResolution, TeamDagWorkerCountSource, TeamDagWorkerPolicy, } from './dag-schema.js';
 export { appendTeamDeliveryLog, appendTeamDeliveryLogForCwd, teamDeliveryLogPath, } from './delivery-log.js';
 export type { TeamDeliveryEventName, TeamDeliveryLogEvent, TeamDeliveryResult } from './delivery-log.js';
+export { buildRebalanceDecisions } from './rebalance-policy.js';
+export type { RebalanceDecision, RebalancePolicyInput, RebalanceWorkerInput } from './rebalance-policy.js';
 export { checkSentinelReadiness, waitForSentinelReadiness, } from './sentinel-gate.js';
 export type { SentinelReadinessOptions, SentinelGateResult, SentinelWaitOptions, SentinelWaitResult, } from './sentinel-gate.js';
 export type { CliAgentType, CliAgentContract, WorkerLaunchConfig } from './model-contract.js';

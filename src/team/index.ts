@@ -212,6 +212,9 @@ export {
 } from './delivery-log.js';
 export type { TeamDeliveryEventName, TeamDeliveryLogEvent, TeamDeliveryResult } from './delivery-log.js';
 
+export { buildRebalanceDecisions } from './rebalance-policy.js';
+export type { RebalanceDecision, RebalancePolicyInput, RebalanceWorkerInput } from './rebalance-policy.js';
+
 export {
   checkSentinelReadiness,
   waitForSentinelReadiness,

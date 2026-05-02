@@ -28,6 +28,7 @@ export { resolveCanonicalTeamStateRoot, resolveWorkerTeamStateRoot, resolveWorke
 export { TEAM_REMINDER_INTENTS, isTeamReminderIntent, resolveLeaderNudgeIntent, } from './reminder-intents.js';
 export { parseTeamDagHandoff, readTeamDagHandoffForLatestPlan, } from './dag-schema.js';
 export { appendTeamDeliveryLog, appendTeamDeliveryLogForCwd, teamDeliveryLogPath, } from './delivery-log.js';
+export { buildRebalanceDecisions } from './rebalance-policy.js';
 export { checkSentinelReadiness, waitForSentinelReadiness, } from './sentinel-gate.js';
 export { getContract, isCliAvailable as isCliAvailableForAgent, validateCliAvailable as validateCliAvailableForAgent, buildLaunchArgs, buildWorkerCommand, parseCliOutput, 
 // Deprecated backward-compat exports kept for downstream consumers.
