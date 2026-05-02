@@ -3,8 +3,12 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { executeTeamApiOperation } from '../api-interop.js';
+import { executeTeamApiOperation, LEGACY_TEAM_MCP_TOOLS, resolveTeamApiOperation } from '../api-interop.js';
 describe('team api compatibility (task + mailbox legacy formats)', () => {
+    it('keeps OMX SSOT legacy orphan-cleanup alias available', () => {
+        expect(LEGACY_TEAM_MCP_TOOLS).toContain('team_orphan_cleanup');
+        expect(resolveTeamApiOperation('team_orphan_cleanup')).toBe('orphan-cleanup');
+    });
     let cwd;
     const teamName = 'compat-team';
     beforeEach(async () => {

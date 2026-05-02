@@ -79,6 +79,7 @@ export const LEGACY_TEAM_MCP_TOOLS = [
   'team_append_event',
   'team_get_summary',
   'team_cleanup',
+  'team_orphan_cleanup',
   'team_write_shutdown_request',
   'team_read_shutdown_ack',
   'team_read_monitor_snapshot',
@@ -127,7 +128,7 @@ export type TeamApiOperation = typeof TEAM_API_OPERATIONS[number];
 
 export type TeamApiEnvelope =
   | { ok: true; operation: TeamApiOperation; data: Record<string, unknown> }
-  | { ok: false; operation: TeamApiOperation | 'unknown'; error: { code: string; message: string } };
+  | { ok: false; operation: TeamApiOperation | 'unknown'; error: { code: string; message: string; details?: Record<string, unknown> } };
 
 const TEAM_STATE_EVENT_WINDOW = 50;
 
